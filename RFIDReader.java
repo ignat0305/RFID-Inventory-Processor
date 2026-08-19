@@ -10,11 +10,11 @@ import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.*;
 
-enum Categories{AMERICANFOOTBAL, OUTDOOR, SOCCER, SPORTWEAR, BASEBALL}
+enum Categories{AMERICANFOOTBAL, OUTDOOR, SOCCER, SPORTWEAR, BASEBALL, INNOVATION}
 enum TagType{STICKER, HARDTAG}
 enum Status{STOCKIN, STOCKOUT, STOCK}
 enum Stage{CR0, PULLOVER, CR1, CR2, SMU, CS1, CS2, CFM, PROMO, LOOKSEE, MFA, OTH, PULLOVERMFA, PRECR0}
-enum Team{L4A, L4MA, L4B, L4MB}
+enum Team{L4A, L4AMA, L4B, L4BMB}
 public class RFIDReader {
     class Record{
         TagType tagType;
@@ -25,7 +25,8 @@ public class RFIDReader {
         String modelName;
         String article;
         Team team;
-        LocalDateTime time;
+        LocalDateTime inTime;
+        LocalDateTime outTime;
         int row;
         public Record(LocalDateTime time, Team team, String article, String modelName,Categories categories, TagType tagType, Stage stage, Status status, String code, int row){
             this.article = article;
@@ -37,20 +38,33 @@ public class RFIDReader {
             this.team = team;
             this.code = code;
             this.row = row;
-            this.time = time;
+            this.inTime = time;
+        }
+        public Record(LocalDateTime inTime, LocalDateTime outTime, Team team, String article, String modelName,Categories categories, TagType tagType, Stage stage, Status status, String code, int row){
+            this.article = article;
+            this.modelName = modelName;
+            this.categories = categories;
+            this.tagType = tagType;
+            this.stage = stage;
+            this.status = status;
+            this.team = team;
+            this.code = code;
+            this.row = row;
+            this.inTime = inTime;
+            this.outTime = outTime;
         }
 
         @Override
         public String toString() {
-            return time.toString()+" "+team.toString()+" "+categories.toString()+" "+modelName+" "+article+" "+stage+" "+stage.toString()+" "+code+" "+tagType.toString()+" "+status.toString()+" "+row;
+            return inTime.toString()+" "+outTime+" "+team.toString()+" "+categories.toString()+" "+modelName+" "+article+" "+stage+" "+stage.toString()+" "+code+" "+tagType.toString()+" "+status.toString()+" "+row;
         }
     }
     String path;
     TreeMap<String, List<Record>> overall;
     TreeMap<String, Map<Status, Integer>> datCount;
     TreeMap<String, List<Record>> closed;
-    Map<String, String> inHouse;
-    List<int[]> bugs = new ArrayList<>();
+    Map<String, Record> inHouse;
+    List<String> bugs = new ArrayList<>();
     public RFIDReader(String path) throws IOException {
         Set<String> bug = new HashSet<>();
         overall = new TreeMap<>();
@@ -58,121 +72,109 @@ public class RFIDReader {
         closed = new TreeMap<>();
         inHouse = new HashMap<>();
         this.path = path;
+        int timeCell = 2;
+        int modelCell = -1;
+        int artCell = -1;
+        int tagCell = -1;
+        int statusCell = -1;
+        int seasonCell = -1;
+        int stageCell = -1;
+        int categoryCell = -1;
+        int idCell = -1;
+        int teamCell= -1;
         FileInputStream file = new FileInputStream(path);
         Workbook workbook = new XSSFWorkbook(file);
         Sheet sheet = workbook.getSheetAt(0);
+
+//        System.out.println(sheet.getRow(2).getCell(15).getNumericCellValue());
+//        System.out.println(sheet.getRow(2).getCell(15).getDateCellValue());
+//        System.out.println(sheet.getRow(2).getCell(15).getLocalDateTimeCellValue());
+        rowLoop:
         for(Row row: sheet){
-            if(row.getRowNum()>=1 &&  row.getRowNum()!= 21654 && (row.getRowNum()< 23206 || row.getRowNum()>23225) && row.getCell(0).getStringCellValue().trim().equals("Sample Warehouse")){
-//                System.out.println(row.getRowNum());
-                DateTimeFormatter timeFormatter = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
-                LocalDateTime key = LocalDateTime.parse(row.getCell(2).getStringCellValue(), timeFormatter);
-                String time = row.getCell(2).getStringCellValue().substring(0, 10);
-//                System.out.println(time);
-                overall.putIfAbsent(time, new ArrayList<>());
-                datCount.putIfAbsent(time, new HashMap<>());
-//                System.out.println(key);
-                int cursor = 1;
-                TagType tagType = TagType.HARDTAG;
-                Stage stage = Stage.CR0;
-                Categories categories = Categories.SPORTWEAR;
-                Status status = Status.STOCKOUT;
-                String code = "";
-                String modelName = "";
-                String article = "";
-                Team team = Team.L4MB;
-
+            if(row.getRowNum()==0){
+                int cursor = 0;
+                while (cursor<row.getLastCellNum()+1){
+                    switch (row.getCell(cursor).getStringCellValue().trim().toUpperCase()){
+                        case "TEAM" ->teamCell = cursor;
+                        case "SEASON"->seasonCell = cursor;
+                        case "STAGE"->stageCell = cursor;
+                        case "ID" -> idCell = cursor;
+                        case "CATEGORY"-> categoryCell = cursor;
+                        case "TAG" -> tagCell = cursor;
+                        case "TIME" -> timeCell = cursor;
+                        case "MODEL" -> modelCell = cursor;
+                        case "STATUS" -> statusCell = cursor;
+                        case "ARTICLE"-> artCell = cursor;
+                    }
+                    cursor++;
+                }
+            } else if(row.getRowNum()>=1 && row.getCell(0).getStringCellValue().trim().equals("Sample Warehouse")){
+                String time = "";
+                String season = row.getCell(seasonCell).getStringCellValue().trim();
+                Categories categories;
+                Team team;
+                TagType tag;
+                Status status;
+                Stage stage;
                 try {
-                    while (cursor<=14){
-                            if(cursor!=13){
-//                                System.out.print(cursor+" "+row.getCell(cursor).getStringCellValue()+" ");
-                                if(cursor==1){
-                                    switch (row.getCell(cursor).getStringCellValue().trim()){
-                                        case "L4A"-> team = Team.L4A;
-                                        case "L4MA"-> team = Team.L4MA;
-                                        case "L4B"-> team = Team.L4B;
-                                        case "L4MB"-> team = Team.L4MB;
-                                    }
-                                }
-                                if(cursor ==3){
-                                    code = row.getCell(cursor).getStringCellValue().trim();
-                                }
-                                if(cursor==4){
-                                    switch (row.getCell(cursor).getStringCellValue().trim()){
-                                        case "Stock"->{
-                                            status = Status.STOCK;
-                                            datCount.get(time).putIfAbsent(Status.STOCK, 0);
-                                            datCount.get(time).compute(Status.STOCK, (a,b)->b+1);
-                                        }
-                                        case "Stock in"->{
-                                            status = Status.STOCKIN;
-
-                                            datCount.get(time).putIfAbsent(Status.STOCKIN, 0);
-                                            datCount.get(time).compute(Status.STOCKIN, (a,b)->b+1);
-                                        }
-                                        case "Stock out"->{
-                                            status = Status.STOCKOUT;
-                                            datCount.get(time).putIfAbsent(Status.STOCKOUT, 0);
-                                            datCount.get(time).compute(Status.STOCKOUT, (a,b)->b+1);
-
-                                        }
-                                    }
-                                }
-                                if(cursor==6){
-                                    switch (row.getCell(cursor).getStringCellValue().trim()){
-                                        case "Outdoor"-> categories = Categories.OUTDOOR;
-                                        case "Soccer"-> categories = Categories.SOCCER;
-                                        case "Sportswear" ->categories = Categories.SPORTWEAR;
-                                        case "American Football"->categories = Categories.AMERICANFOOTBAL;
-                                    }
-                                }
-                                if(cursor==8){
-                                    switch (row.getCell(cursor).getStringCellValue().trim()){
-                                        case "CR0" -> stage = Stage.CR0;
-                                        case "CR1" -> stage = Stage.CR1;
-                                        case "CR2" -> stage = Stage.CR2;
-                                        case "CFM" -> stage = Stage.CFM;
-                                        case "Pullover" -> stage = Stage.PULLOVER;
-                                        case "Pre-CR0" -> stage = Stage.PRECR0;
-                                        case "CS2" -> stage = Stage.CS2;
-                                        case "CS1" -> stage = Stage.CS1;
-                                        case "Looksee" -> stage = Stage.LOOKSEE;
-                                        case "OTH" -> stage = Stage.OTH;
-                                        case "MFA" -> stage = Stage.MFA;
-                                        case "Promo" -> stage = Stage.PROMO;
-                                        case "PulloverMFA" -> stage = Stage.PULLOVERMFA;
-                                        case "SMU" -> stage = Stage.SMU;
-                                    }
-                                }
-                                if(cursor==9){
-                                    modelName = row.getCell(cursor).getStringCellValue().trim();
-                                }
-                                if(cursor==10){
-                                    article = row.getCell(cursor).getStringCellValue().trim();
-                                }
-                                if(cursor == 14 && !row.getCell(cursor).getStringCellValue().isEmpty()){
-                                    switch (row.getCell(cursor).getStringCellValue().trim()){
-                                        case "Sticker"-> tagType = TagType.STICKER;
-                                        case "HardTag"-> tagType = TagType.HARDTAG;
-                                    }
-                                }
-                            }
-                        cursor++;
+                    categories = Categories.valueOf(row.getCell(categoryCell).getStringCellValue().trim().toUpperCase());
+                    team = Team.valueOf(row.getCell(teamCell).getStringCellValue().trim().toUpperCase());
+                    tag = TagType.valueOf(row.getCell(tagCell).getStringCellValue().trim().toUpperCase());
+                    status = Status.valueOf(row.getCell(statusCell).getStringCellValue().trim().toUpperCase());
+                    stage = Stage.valueOf(row.getCell(stageCell).getStringCellValue().trim().toUpperCase());
+                }catch (IllegalArgumentException e){
+                    bugs.add(row.getRowNum()+" incorrect argument");
+                    continue rowLoop;
+                }
+                String model = row.getCell(modelCell).toString().trim();
+                String article = row.getCell(artCell).getStringCellValue().trim();
+                String id = row.getCell(idCell).getStringCellValue().trim().toUpperCase();
+                LocalDateTime key;
+                try{
+                    DateTimeFormatter timeFormatter = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
+                    key = LocalDateTime.parse(row.getCell(timeCell).getStringCellValue().trim(), timeFormatter);
+                }catch (IllegalStateException e){
+                    bugs.add(row.getRowNum()+" Time format issue");
+                    continue rowLoop;
+                }
+                Record item = new Record(key, team, article, model, categories, tag, stage, status, id, row.getRowNum());
+                String date = key.toString().substring(0, 10);
+                if(status.equals(Status.STOCKIN)){
+                    if(inHouse.containsKey(id)){
+                        bugs.add(item.toString());
+                    }else{
+                        inHouse.put(id, item);
+                        datCount.putIfAbsent(date, new HashMap<>());
+                        datCount.get(date).putIfAbsent(item.status, 0);
+                        datCount.get(date).compute(item.status, (a,b)->b+1);
+                        overall.putIfAbsent(date, new ArrayList<>());
+                        overall.get(date).add(item);
                     }
-                    Record item  = new Record(key,team, article, modelName, categories, tagType, stage, status, code, row.getRowNum());
-                    if(item.status.name().equals("STOCKIN")){
-                        inHouse.put(item.code, time);
+                }else if(status.equals(Status.STOCK) || status.equals(Status.STOCKOUT)){
+                    if(!inHouse.containsKey(id) || !inHouse.get(id).team.equals(item.team)){
+                        bugs.add(item.toString());
+                    }else{
+                        overall.putIfAbsent(date, new ArrayList<>());
+                        if(status.equals(Status.STOCK)){
+                            overall.get(date).add(item);
+                            datCount.putIfAbsent(date, new HashMap<>());
+                            datCount.get(date).putIfAbsent(item.status, 0);
+                            datCount.get(date).compute(item.status, (a,b)->b+1);
+                        }else{
+                            overall.get(date).add(item);
+                            Record update = new Record(inHouse.get(id).inTime, key, item.team, item.article, item.modelName, item.categories, item.tagType, item.stage, item.status, item.code, item.row);
+                            closed.putIfAbsent(date, new ArrayList<>());
+                            closed.get(date).add(update);
+                            datCount.putIfAbsent(date, new HashMap<>());
+                            datCount.get(date).putIfAbsent(item.status, 0);
+                            datCount.get(date).compute(item.status, (a,b)->b+1);
+                            inHouse.remove(id);
+                        }
                     }
-                    if(item.status.name().equals("STOCKOUT")){
-                        closed.putIfAbsent(time, new ArrayList<>());
-                        closed.get(time).add(item);
-                    }
-                    overall.get(time).add(item);
-//                    System.out.println("\n");
-                }catch (NullPointerException e ){
-                    break;
                 }
             }
         }
+        file.close();
     }
 
     public void printTheMap(){
@@ -188,6 +190,17 @@ public class RFIDReader {
             System.out.print("\n");
         }
     }
+
+    public void bugLogs(){
+        if(bugs.isEmpty()){
+            System.out.print("None");
+        }else{
+            for(var x: bugs){
+                System.out.println(x);
+            }
+        }
+    }
+
     public void create(String outputPath) throws IOException {
 
         Workbook workbook = new XSSFWorkbook();
@@ -200,6 +213,14 @@ public class RFIDReader {
 
         DateTimeFormatter timeFormat =
                 DateTimeFormatter.ofPattern("HH:mm:ss");
+        Sheet sheet1 = workbook.createSheet("Bug_Logs");
+        int rowC = 0;
+        Row head = sheet1.createRow(rowC++);
+        head.createCell(0).setCellValue("Title");
+        for(var x: bugs){
+            Row current = sheet1.createRow(rowC++);
+            current.createCell(0).setCellValue(x);
+        }
 
         for (String date : overall.keySet()) {
 
@@ -247,7 +268,7 @@ public class RFIDReader {
                 Row row = sheet.createRow(rowNum++);
 
                 row.createCell(0).setCellValue(
-                        r.time.format(timeFormat));
+                        r.inTime.format(timeFormat));
                 row.createCell(1).setCellValue(r.team.toString());
                 row.createCell(2).setCellValue(r.categories.toString());
                 row.createCell(3).setCellValue(r.modelName);
@@ -293,14 +314,13 @@ public class RFIDReader {
                 row.createCell(2).setCellValue(out.modelName);
 
                 // ★ StockIn Date：使用 RFID 真正的入庫日期
-                String stockInDate =
-                        inHouse.getOrDefault(out.code, "NOT FOUND");
+                String stockInDate = out.inTime.toString();
 
                 row.createCell(3).setCellValue(stockInDate);
 
                 // ★ StockOut Time：使用真正的出庫時間
                 row.createCell(4).setCellValue(
-                        out.time.format(timeFormat));
+                        out.outTime.format(timeFormat));
             }
 
             // Auto size
@@ -314,7 +334,7 @@ public class RFIDReader {
 
             workbook.write(output);
         }
-        System.out.print("Done");
+        System.out.println("Done");
         workbook.close();
     }
 
