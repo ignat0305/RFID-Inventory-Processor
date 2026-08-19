@@ -1,21 +1,10 @@
-# RFID Inventory Processor
+## Version
 
-Java application for processing RFID warehouse inventory records exported from Excel.
+**v2.0**
 
-## Features
+### What's New
 
-- Parse warehouse Excel using Apache POI
-- Generate daily sheets automatically
-- Count STOCK / STOCKIN / STOCKOUT
-- Track closed RFID with original Stock-In date
-
-## Tech Stack
-
-- Java 17
-- Apache POI
-- TreeMap / HashMap
-- Object-Oriented Design
-
-## Status
-
-Current version: **v1.0**
+- RFID Stock-In / Stock-Out pairing
+- Closed RFID lifecycle tracking
+- Bug Logs worksheet
+- Daily worksheet generation
